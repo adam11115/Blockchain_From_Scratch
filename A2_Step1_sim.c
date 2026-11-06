@@ -1,7 +1,7 @@
 /* Atelier 2 - Etape 1 : simulateur de reseau blockchain
    Noeuds + latence reseau + forks + reorganisation de chaine.
    Reseau HONNETE uniquement (les attaques viendront aux etapes suivantes). */
-#include "common2.c"
+#include "common.h"
 #include <math.h>
 
 #define MAX_NODES  20

@@ -3,7 +3,7 @@
 Ce dépôt contient deux ateliers qui se suivent :
 
 - **Atelier 1** : construire les briques d'une blockchain en C (arbre de Merkle, Proof of Work, Proof of Stake, blockchain complète).
-- **Atelier 2** : construire une plateforme de simulation d'attaques sur une blockchain PoW/PoS. Seule l'**étape 1** (le simulateur de réseau) est faite pour l'instant.
+- **Atelier 2** : construire une plateforme de simulation d'attaques sur une blockchain PoW/PoS. Les **étapes 1 à 4** sont faites (simulateur de réseau, transactions, attaque des 51 %, minage égoïste).
 
 Tout est écrit en C simple, sans bibliothèque externe, avec la fonction de hachage **DJB2** de Daniel J. Bernstein.
 
@@ -18,8 +18,9 @@ Tout est écrit en C simple, sans bibliothèque externe, avec la fonction de hac
 | `ex2_pow.c` | 1 | Exercice 2 : Proof of Work |
 | `ex3_pos.c` | 1 | Exercice 3 : Proof of Stake et comparaison avec la PoW |
 | `ex4_blockchain.c` | 1 | Exercice 4 : blockchain complète |
-| `A2_step1_simulator.c` | 2 | Étape 1 : simulateur de réseau (nœuds, latence, forks) |
-| `A2_step2_attack51.c` | 2 | Étapes 2 et 3 : transactions, soldes et attaque des 51 % (double dépense) |
+| `A2_Step1_sim.c` | 2 | Étape 1 : simulateur de réseau (nœuds, latence, forks) |
+| `A2_Step2_atck51.c` | 2 | Étapes 2 et 3 : transactions, soldes et attaque des 51 % (double dépense) |
+| `A2_step3_SM.c` | 2 | Étape 4 : minage égoïste (selfish mining) |
 
 > Si vos fichiers s'appellent `TD_1_EX1.c`, `TD_1_EX2.c`, `TD_2_EX3.c` et `TD_1_EX4.c`, ce sont les mêmes programmes que `ex1_merkle.c`, `ex2_pow.c`, `ex3_pos.c` et `ex4_blockchain.c`. Tous les `.c` doivent être dans le **même dossier** que `common.h`.
 
@@ -42,11 +43,14 @@ gcc -O2 -o ex3 ex3_pos.c
 gcc -O2 -o ex4 ex4_blockchain.c
 .\ex4
 
-gcc -O2 -o sim A2_step1_simulator.c -lm
+gcc -O2 -o sim A2_Step1_sim.c -lm
 .\sim
 
-gcc -O2 -o attack51 A2_step2_attack51.c -lm
+gcc -O2 -o attack51 A2_Step2_atck51.c -lm
 .\attack51
+
+gcc -O2 -o sm A2_step3_SM.c -lm
+.\sm
 ```
 
 Sous Linux ou macOS, remplacer `.\` par `./`. Le `-lm` est nécessaire pour l'Atelier 2 (fonction `log()`).
@@ -137,7 +141,7 @@ En PoW, un attaquant doit refaire le minage du bloc modifié et de tous les suiv
 
 **Sujet :** concevoir une plateforme expérimentale pour simuler, analyser et détecter des attaques sur une blockchain PoW/PoS : attaque des 51 % avec double dépense, minage égoïste (selfish mining), rétention de blocs (block withholding) dans un pool, et attaque Sybil. Il faut aussi proposer un mécanisme adaptatif de détection, des contre-mesures et une évaluation expérimentale (taux de réussite, précision et rappel, temps de détection, pertes économiques, surcoût).
 
-### Ce qui est fait : étape 1 (`A2_step1_simulator.c`)
+### Ce qui est fait : étape 1 (`A2_Step1_sim.c`)
 
 Un **simulateur de réseau honnête** : plusieurs nœuds minent, s'envoient leurs blocs avec un délai, créent des forks et se réorganisent. C'est la **blockchain de référence** à laquelle les versions attaquée et protégée seront comparées.
 
@@ -192,7 +196,7 @@ boucle : prendre l'événement le plus proche
 
 Ces valeurs décrivent le **comportement normal** du réseau. Le détecteur de l'Atelier 2 s'en servira comme référence pour repérer ce qui s'écarte de la normale.
 
-### Ce qui est fait : étapes 2 et 3 (`A2_step2_attack51.c`)
+### Ce qui est fait : étapes 2 et 3 (`A2_Step2_atck51.c`)
 
 Le même simulateur, enrichi de **transactions avec soldes** et de l'**attaque des 51 % avec double dépense**.
 
@@ -227,6 +231,72 @@ La colonne « théorie » est la formule de Rosenfeld pour la probabilité qu'un
 - À 51 % et plus, la théorie donne 100 %, mais le simulateur donne environ 95 % : l'attaquant abandonne à 15 blocs de retard, alors qu'avec 51 % la marche aléatoire est presque plate et peut demander une patience illimitée.
 - Les résultats sont écrits dans `attack51_results.csv`.
 
+### Ce qui est fait : étape 4 (`A2_step3_SM.c`)
+
+Le même simulateur de réseau, avec la stratégie de **minage égoïste** d'Eyal et Sirer (2014). L'attaquant ne publie pas ses blocs tout de suite : il garde une avance secrète et la révèle au bon moment pour que les mineurs honnêtes perdent du travail sur des blocs qui finiront orphelins. Il peut ainsi obtenir une part de récompense **supérieure à sa part de puissance de hash**, sans avoir 51 %.
+
+> Le fichier s'appelle `A2_step3_SM.c` mais son commentaire d'en-tête indique « Étape 4 » : c'est bien l'étape 4 du plan (section 7).
+
+#### Comment ça marche
+
+Le réseau est composé de **5 nœuds honnêtes** qui se partagent la puissance restante à parts égales, et d'un **attaquant, toujours le dernier nœud**. Le paramètre `c.selfish` choisit la stratégie : `1` = minage égoïste, `0` = l'attaquant mine honnêtement (c'est la référence de comparaison).
+
+L'état de l'attaquant tient en quelques variables : sa chaîne privée (`g_att_tip`), la chaîne publique (`g_pub_tip`) et l'**avance** (*lead*), c'est-à-dire la hauteur de sa chaîne privée moins celle de la chaîne publique. Deux fonctions appliquent la stratégie :
+
+- `selfish_on_own_block()` : appelée quand l'attaquant trouve un bloc.
+- `selfish_on_honest_block()` : appelée quand un nœud honnête trouve un bloc (l'attaquant l'apprend immédiatement).
+
+| Situation | Action de l'attaquant |
+|---|---|
+| Il trouve un bloc, pas de course en cours | Il **garde le bloc secret** (son avance augmente) |
+| Il trouve un bloc pendant une course (égalité) | Il publie ses 2 blocs et **gagne** la course |
+| Un bloc honnête arrive, avance = 0 | Il n'a rien à cacher : il rejoint la chaîne publique |
+| Un bloc honnête arrive, avance = 1 | Il publie son bloc : **course** (égalité) |
+| Un bloc honnête arrive, avance = 2 | Il publie tout, **gagne**, le bloc honnête devient orphelin |
+| Un bloc honnête arrive, avance > 2 | Il publie 1 bloc et garde le reste de l'avance |
+
+**Le paramètre gamma.** En cas d'égalité, une partie du réseau honnête va miner sur le bloc de l'attaquant et l'autre sur le bloc honnête. **gamma** est la fraction qui choisit le bloc de l'attaquant. Le programme le **mesure** : à la fin de chaque course, il regarde sur quelle branche le bloc suivant est construit.
+
+L'attaquant peut être plus ou moins bien connecté au réseau. Le paramètre `att_delay_factor` multiplie le délai de diffusion de ses blocs : `0` = très bien connecté (ses blocs arrivent avant les autres, gamma élevé), `1` = normal, `5` = mal connecté (ses blocs arrivent en retard, gamma proche de 0).
+
+**Théorie (Eyal et Sirer).** Deux formules servent à valider le simulateur :
+- `theory_share(q, gamma)` : part de récompense attendue d'un mineur égoïste de part de hash `q`.
+- `theory_threshold(gamma)` = (1 − gamma) / (3 − 2·gamma) : part de hash minimale au-dessus de laquelle tricher rapporte plus que miner honnêtement. Elle vaut 33,3 % pour gamma = 0, 25 % pour gamma = 0,5 et 0 % pour gamma = 1.
+
+Le programme lance 4 tests : une exécution racontée pas à pas (`verbose`), la comparaison honnête / égoïste avec la théorie, l'influence de la connexion de l'attaquant, et les indicateurs observables. Chaque point est une moyenne de 20 simulations de 2 000 blocs. La **part de récompense** est la part des blocs de l'attaquant dans la chaîne de référence (celle du nœud 0).
+
+#### Résultats obtenus
+
+**Test 2 : honnête contre égoïste** (délai de l'attaquant normal, gamma mesuré entre 0,37 et 0,40), écrit dans `selfish_results.csv` :
+
+| Part de hash | Part de récompense honnête | Part de récompense égoïste | gamma mesuré | Théorie | Orphelins honnête | Orphelins égoïste |
+|---|---|---|---|---|---|---|
+| 10 % | 10,1 % | 6,6 % | 0,37 | 6,3 % | 7,4 % | 14,0 % |
+| 15 % | 15,1 % | 12,1 % | 0,38 | 11,2 % | 7,7 % | 17,3 % |
+| 20 % | 20,2 % | 17,8 % | 0,39 | 17,1 % | 7,5 % | 19,7 % |
+| 25 % | 25,5 % | 24,8 % | 0,39 | 23,8 % | 7,3 % | 22,0 % |
+| 30 % | 30,8 % | **33,2 %** | 0,39 | 31,5 % | 7,4 % | 25,1 % |
+| 35 % | 36,0 % | 42,5 % | 0,40 | 40,7 % | 7,3 % | 28,1 % |
+| 40 % | 41,1 % | 53,4 % | 0,40 | 51,7 % | 6,9 % | 32,4 % |
+| 45 % | 46,6 % | 70,0 % | 0,37 | 67,3 % | 6,4 % | 39,2 % |
+
+**Test 3 : influence de la connexion de l'attaquant** (part de récompense de l'attaquant égoïste) :
+
+| Part de hash | Très connecté (délai ×0, gamma ≈ 0,8) | Normal (délai ×1, gamma ≈ 0,4) | Mal connecté (délai ×5, gamma = 0) |
+|---|---|---|---|
+| 10 % | 9,8 % | 6,6 % | 2,9 % |
+| 20 % | 22,4 % | 17,8 % | 10,9 % |
+| 30 % | 37,1 % | 33,2 % | 25,4 % |
+| 40 % | 55,9 % | 53,4 % | 45,0 % |
+| 45 % | 69,9 % | 70,0 % | 60,7 % |
+
+**Lecture des résultats :**
+- Un petit attaquant (10 à 25 % de la puissance) **perd** en trichant : sa part de récompense est inférieure à celle qu'il aurait en minant honnêtement. Le minage égoïste devient rentable entre **25 % et 30 %** de puissance de hash. La théorie, avec gamma ≈ 0,39, donne un seuil d'environ 27,5 %, ce qui correspond.
+- Au-delà, le gain augmente vite : à 40 % de puissance, l'attaquant obtient 53,4 % des récompenses au lieu de 41,1 %.
+- Le simulateur suit la formule d'Eyal et Sirer de près (écart de l'ordre de 1 à 3 points, simulé un peu au-dessus de la théorie).
+- **La connexion de l'attaquant compte beaucoup.** À 30 % de puissance, un attaquant très connecté obtient 37,1 %, un attaquant normal 33,2 % et un attaquant mal connecté 25,4 %, soit **moins que sa part de hash** : il vaut alors mieux miner honnêtement. Le seuil de rentabilité dépend donc de gamma.
+- **Signature de l'attaque** (Test 4, attaquant à 30 %) : le taux de blocs orphelins passe d'environ 7 % (réseau honnête) à environ 25 % (minage égoïste), et la part de récompense de l'attaquant dépasse sa part de puissance de hash. Ce sont des indicateurs observables par un détecteur, avec la profondeur des réorganisations.
+
 ---
 
 ## 6. Comment l'Atelier 2 se rattache à l'Atelier 1
@@ -241,34 +311,12 @@ Le simulateur est un **programme nouveau**, pas un import direct du code de l'At
 - Plusieurs nœuds, chacun avec sa propre vue de la chaîne.
 - Un réseau avec latence, donc des forks et des réorganisations.
 - Un minage **simulé** (tirage aléatoire) au lieu de la recherche de nonce de l'Exercice 2, qui serait trop lente pour des centaines d'expériences (la difficulté 5 prenait déjà environ une seconde par bloc).
-- Les transactions, les soldes et l'attaque des 51 % sont ajoutés à l'étape 2-3. Les autres attaques et le détecteur restent à faire.
+- Les transactions, les soldes et l'attaque des 51 % sont ajoutés à l'étape 2-3, et le minage égoïste à l'étape 4. Les autres attaques et le détecteur restent à faire.
 
 **Formulation pour le rapport :** la blockchain de l'Atelier 1 (blocs, chaînage DJB2, consensus PoW et PoS) est le modèle de référence, et l'Atelier 2 l'enveloppe dans un simulateur de réseau pour y injecter des attaques.
 
 ---
 
-## 7. Prochaines étapes
-
-| Étape | Contenu |
-|---|---|
-| 2 | ✔ Fait : transactions et soldes |
-| 3 | ✔ Fait : **attaque des 51 %** avec double dépense, taux de réussite selon la part de hash et les confirmations |
-| 4 | **Minage égoïste** : publication stratégique des blocs. Comparer la part de récompense de l'attaquant à sa part de hash |
-| 5 | **Block withholding** dans un pool : un membre cache les blocs gagnants. Mesure de la perte du pool |
-| 6 | **Attaque Sybil** : de nombreux faux nœuds dans un réseau P2P (nécessite un graphe de pairs) |
-| 7 | **Détecteur adaptatif** : surveille le taux d'orphelins, le délai de propagation, la distribution des récompenses et la profondeur des réorganisations, avec des seuils qui s'adaptent à la normale du réseau. Option : un modèle de machine learning |
-| 8 | **Contre-mesures** adaptées à chaque attaque (plus de confirmations, départage aléatoire, pénalités dans le pool, limite de pairs par origine) |
-| 9 | **Expériences et rapport** : comparaison référence / attaquée / protégée, avec taux de réussite, précision et rappel, temps de détection, pertes économiques et surcoût. Plusieurs exécutions par configuration avec des graines fixes |
-
-Les attaques seront activées par un paramètre de la simulation, par exemple :
-
-```c
-c.attack = ATTACK_51;       /* ou ATTACK_SELFISH, ATTACK_WITHHOLD, ATTACK_SYBIL */
-c.attacker_share = 30;      /* part de hash de l'attaquant, en % */
-sim_run(&c, seed, &result);
-```
-
----
 
 ## 8. Limites connues
 
@@ -277,4 +325,7 @@ sim_run(&c, seed, &result);
 - Un bloc ne contient qu'une transaction, et l'attaquant du scénario est modélisé avec une stratégie simple (publier dès qu'il est strictement plus long, abandonner à 15 blocs de retard).
 - Le minage du simulateur est modélisé par une loi exponentielle, pas calculé par hachage.
 - Les nœuds apprennent automatiquement les ancêtres manquants d'un bloc reçu (pas de protocole de synchronisation).
+- Minage égoïste : l'attaquant apprend les blocs honnêtes instantanément (un peu favorable pour lui), il est toujours le dernier nœud, et les 5 nœuds honnêtes ont des parts égales.
+- Minage égoïste : il n'y a pas d'ajustement de difficulté. On compare la part de blocs dans la chaîne, pas le gain par unité de temps.
+- Minage égoïste : gamma est estimé en comptant les courses (mesure empirique), il varie un peu d'une simulation à l'autre.
 - Les temps mesurés dépendent de la machine et varient d'une exécution à l'autre.
